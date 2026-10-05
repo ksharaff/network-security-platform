@@ -13,7 +13,7 @@ from alembic import context
 
 # Our settings object reads DATABASE_URL from .env, so the password
 # never appears in the committed alembic.ini.
-from app.core.config import settings  # noqa: F401
+from app.core.config import settings
 
 # Base.metadata is SQLAlchemy's catalogue of every table defined by a
 # model. `engine` is the app's existing connection pool, reused so
@@ -28,10 +28,10 @@ import app.models  # noqa: F401
 # Alembic's config object, which gives access to alembic.ini values.
 config = context.config
 
-# Set up Python logging using the [loggers] sections in alembic.ini.
-# disable_existing_loggers=False stops this from silencing the
-# application's own loggers if they are ever active in the same process.
-if config.config_file_name is not None:
+# Set up Python logging from alembic.ini, but only on the command line.
+# When the test suite injects its own connection (see below), reconfiguring
+# logging would remove pytest's log-capturing handlers.
+if config.config_file_name is not None and "connection" not in config.attributes:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # What autogenerate compares the real database against.
@@ -52,10 +52,23 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         # Also detect changed column types (e.g. String(50) to String(100)).
-        # Alembic ignores type changes by default.
         compare_type=True,
     )
 
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def do_run_migrations(connection) -> None:
+    """Configure Alembic on an open connection and apply the migrations."""
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
+
+    # Run all migrations inside one transaction: if one fails,
+    # the database rolls back to how it was before.
     with context.begin_transaction():
         context.run_migrations()
 
@@ -65,19 +78,17 @@ def run_migrations_online() -> None:
     Online mode (the normal one): connect to the database and apply
     migrations directly.
     """
-    # Borrow a connection from the application's engine. The `with`
-    # block returns it to the pool when finished.
-    with engine.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+    # A caller (the test suite) may pass a ready-made connection through
+    # config.attributes. If so, use it instead of the app's own engine.
+    injected_connection = config.attributes.get("connection")
 
-        # Run all migrations inside one transaction: if one fails,
-        # the database rolls back to how it was before.
-        with context.begin_transaction():
-            context.run_migrations()
+    if injected_connection is not None:
+        do_run_migrations(injected_connection)
+    else:
+        # Normal CLI use: borrow a connection from the application's
+        # engine; the `with` block returns it to the pool afterwards.
+        with engine.connect() as connection:
+            do_run_migrations(connection)
 
 
 # Alembic sets an "offline mode" flag when run with `--sql`.
