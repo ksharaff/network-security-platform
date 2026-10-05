@@ -1,0 +1,19 @@
+# Web framework. Provides routing, validation, and auto-generated API docs.
+fastapi
+
+# ASGI server that actually runs the FastAPI app.
+# [standard] pulls in performance extras and file-watching for --reload.
+uvicorn[standard]
+
+# ORM. 2.0+ is a significant rewrite with much better typing than 1.x.
+sqlalchemy>=2.0
+
+# PostgreSQL driver (psycopg version 3, not the older psycopg2).
+# [binary] ships precompiled, so no C compiler or libpq-dev needed.
+psycopg[binary]>=3.1
+
+# Loads configuration from environment variables and .env files,
+# validating types on the way in.
+pydantic-settings
+
+alembic==1.20.0
